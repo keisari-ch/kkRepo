@@ -180,11 +180,13 @@ const viewHashRoutes = {
   "security-oidc": "#admin/security/oidc",
   "security-anonymous": "#admin/security/anonymous",
   "security-api-keys": "#admin/security/api-keys",
+  "ohpm-login": "#admin/security/ohpm-login",
   "security-scanning": SECURITY_SCAN_ROUTE_BASE,
   "security-audit-log": "#admin/security/audit-log",
   "ui-settings": "#admin/system/ui-settings",
   "nexus-migration": "#admin/migration/nexus",
   "repository-data-migration": "#admin/migration/repository-data",
+  "ohpm-import": "#admin/migration/ohpm",
 };
 
 const hashViewRoutes = {
@@ -209,6 +211,7 @@ const hashViewRoutes = {
   "#admin/security/anonymous": "security-anonymous",
   "#admin/security/api-keys": "security-api-keys",
   "#admin/security/apikeys": "security-api-keys",
+  "#admin/security/ohpm-login": "ohpm-login",
   "#admin/security/artifact-scanning": "security-scanning",
   "#admin/security/scanning": "security-scanning",
   "#admin/security/audit-log": "security-audit-log",
@@ -219,6 +222,7 @@ const hashViewRoutes = {
   "#admin/migration": "nexus-migration",
   "#admin/migration/nexus": "nexus-migration",
   "#admin/migration/repository-data": "repository-data-migration",
+  "#admin/migration/ohpm": "ohpm-import",
 };
 
 const memberTransfer = {
@@ -352,6 +356,8 @@ function trapFocusInFormModal(event) {
 }
 
 function handleFormModalKeydown(event) {
+  // A native confirmation dialog owns keyboard input above the form modal.
+  if (event.target?.closest?.("dialog[open]")) return true;
   if (event.key === "Tab") {
     return trapFocusInFormModal(event);
   }
@@ -731,6 +737,7 @@ function setSideGroupOpen(button, open, persist = false) {
 }
 
 function sideGroupForView(view) {
+  if (view === "ohpm-login") view = "security-api-keys";
   const item = Array.from(document.querySelectorAll(".side-item[data-view]"))
     .find((candidate) => candidate.dataset.view === view);
   return item?.closest(".side-group-items")?.dataset.sideGroupItems || "";
@@ -4786,37 +4793,44 @@ function renderSecurityApiKeys() {
       <td>${escapeHtml(key.ownerSource)}/${escapeHtml(key.ownerUserId)}</td>
       <td><span class="state-badge compact ${key.status === "ACTIVE" ? "ok" : "warn"}">${escapeHtml(key.status || "")}</span></td>
       <td><code>${escapeHtml(key.tokenPrefix || "")}</code></td>
-      <td>${escapeHtml((key.scopes || []).join(", "))}</td>
       <td class="actions-column"><button class="row-action delete-security-api-key-button" data-id="${key.id}" type="button">delete</button></td>
     </tr>
   `).join("");
   document.getElementById("security-api-key-table").innerHTML = rows
-    || '<tr><td colspan="6" class="placeholder">No API keys.</td></tr>';
+    || '<tr><td colspan="5" class="placeholder">No API keys.</td></tr>';
 }
 
+let apiKeyOwnerPicker;
+
 function showSecurityApiKeyForm() {
+  apiKeyOwnerPicker ||= window.KkUserPicker.create({
+    source: document.getElementById("security-api-key-owner-source"),
+    user: document.getElementById("security-api-key-owner-user-id"),
+    status: document.getElementById("security-api-key-owner-status")
+  });
   document.getElementById("security-api-key-domain").value = "NpmToken";
   document.getElementById("security-api-key-owner-source").value = "Local";
   document.getElementById("security-api-key-owner-user-id").value = "";
   document.getElementById("security-api-key-display-name").value = "";
-  document.getElementById("security-api-key-scopes").value = "";
   clearRequiredFieldErrors(securityApiKeyRequiredFields);
-  openFormModal("security-api-key-form", "security-api-key-owner-user-id");
+  apiKeyOwnerPicker.open();
+  openFormModal("security-api-key-form", "security-api-key-domain");
 }
 
 function hideSecurityApiKeyForm() {
+  apiKeyOwnerPicker?.close();
   closeFormModal("security-api-key-form");
   clearRequiredFieldErrors(securityApiKeyRequiredFields);
 }
 
 async function saveSecurityApiKey() {
+  if (!apiKeyOwnerPicker?.validate()) return;
   if (!validateRequiredFields(securityApiKeyRequiredFields)) return;
   const payload = {
     domain: document.getElementById("security-api-key-domain").value.trim() || "NpmToken",
     ownerSource: document.getElementById("security-api-key-owner-source").value.trim() || "Local",
     ownerUserId: document.getElementById("security-api-key-owner-user-id").value.trim(),
-    displayName: document.getElementById("security-api-key-display-name").value.trim() || null,
-    scopes: commaList(document.getElementById("security-api-key-scopes").value)
+    displayName: document.getElementById("security-api-key-display-name").value.trim() || null
   };
   try {
     const response = await fetch("/internal/security/api-keys", {
@@ -8434,7 +8448,7 @@ function switchView(view, options = {}) {
     item.classList.toggle("is-active", item.id === `${view}-view`);
   });
   document.querySelectorAll(".side-item").forEach((item) => {
-    item.classList.toggle("is-active", item.dataset.view === view);
+    item.classList.toggle("is-active", item.dataset.view === (view === "ohpm-login" ? "security-api-keys" : view));
   });
   updateCurrentSideGroup(view);
   if (view === "blobstores") {
@@ -8469,6 +8483,8 @@ function switchView(view, options = {}) {
   if (view === "security-audit-log") loadAuditLogs(0);
   if (view === "ui-settings") loadUiSettings();
   if (view === "repository-data-migration") loadRepositoryDataMigrationJobs();
+  if (view === "ohpm-import") window.KkOhpmImport.load();
+  if (view === "ohpm-login") window.KkOhpmLogin.load();
   return true;
 }
 
